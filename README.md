@@ -47,3 +47,7 @@ Typecho 垃圾评论拦截插件。基于 SmartSpam 简化重构，专注核心�
 ## 许可
 
 MIT
+
+## 感谢原作者
+
+[BeihangHuiye/SpamLite]:https://github.com/BeihangHuiye/SpamLite
