@@ -50,4 +50,4 @@ MIT
 
 ## 感谢原作者
 
-[BeihangHuiye/SpamLite]:https://github.com/BeihangHuiye/SpamLite
+[BeihangHuiye/SpamLite](https://github.com/BeihangHuiye/SpamLite)
