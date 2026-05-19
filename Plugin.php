@@ -4,7 +4,7 @@
  * SpamLite评论过滤器，SmartSpam简化版
  *
  * @package SpamLite
- * @author YoviSun Gmc
+ * @author 陶小桃Blog Gmc
  * @version 0.1.0
  * @link https://www.gmcllp.cn
  */
