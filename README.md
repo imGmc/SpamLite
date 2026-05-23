@@ -56,6 +56,10 @@ Typecho 垃圾评论拦截插件。基于 SmartSpam 简化重构，专注核心�
 - 抽取 `filter()` 检查器调度为 `checkRule()` 方法
 - 消除 `$messages` 数组重复分配，提取为类常量
 - `RULES` 配置常量移至类顶部，符合 PHP 约定
+- 合并 `ABANDON_MESSAGES` 到 `RULES`，消除键空间重复
+- 抽取 `logFilePath()` 消除日志路径三处硬编码
+- `log()` 防护文件检查使用静态标志位，每次拦截节省 2 次 stat 调用
+- 修复 `stream_get_contents` 后空行未被过滤的行为回归
 
 ### 0.1.1
 

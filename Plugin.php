@@ -20,24 +20,14 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
     private const LOG_DISPLAY_COUNT = 20;
 
     /**
-     * 过滤规则配置。
-     * 每项定义：选项键名、敏感词键名（可选）、评论字段、检查方式、规则名。
+     * 过滤规则配置。每项包含：选项键名、敏感词键名、评论字段、检查方式、规则名、拦截错误消息。
      */
     private const RULES = [
-        ['opt' => 'opt_sensitive_words',  'words' => 'words_sensitive',           'field' => 'text',   'checker' => 'check_in',  'name' => '敏感词汇'],
-        ['opt' => 'opt_no_chinese',       'words' => null,                         'field' => 'text',   'checker' => 'no_chinese', 'name' => '非中文评论'],
-        ['opt' => 'opt_sensitive_nickname','words' => 'words_sensitive_nickname',  'field' => 'author', 'checker' => 'check_in',  'name' => '敏感昵称'],
-        ['opt' => 'opt_sensitive_url',    'words' => 'words_sensitive_url',        'field' => 'url',    'checker' => 'check_in',  'name' => '敏感网址'],
-        ['opt' => 'opt_sensitive_email',  'words' => 'words_sensitive_email',      'field' => 'mail',   'checker' => 'check_in',  'name' => '敏感邮箱'],
-    ];
-
-    /** @var array abandon 操作对应的错误消息映射 */
-    private const ABANDON_MESSAGES = [
-        '敏感词汇' => '评论内容中包含敏感词汇',
-        '非中文评论' => '评论内容请包含至少一个中文汉字',
-        '敏感昵称' => '评论者的昵称包含敏感词汇',
-        '敏感网址' => '评论者的网址包含敏感词汇',
-        '敏感邮箱' => '评论者的邮箱包含敏感词汇',
+        ['opt' => 'opt_sensitive_words',  'words' => 'words_sensitive',           'field' => 'text',   'checker' => 'check_in',  'name' => '敏感词汇', 'message' => '评论内容中包含敏感词汇'],
+        ['opt' => 'opt_no_chinese',       'words' => null,                         'field' => 'text',   'checker' => 'no_chinese', 'name' => '非中文评论', 'message' => '评论内容请包含至少一个中文汉字'],
+        ['opt' => 'opt_sensitive_nickname','words' => 'words_sensitive_nickname',  'field' => 'author', 'checker' => 'check_in',  'name' => '敏感昵称', 'message' => '评论者的昵称包含敏感词汇'],
+        ['opt' => 'opt_sensitive_url',    'words' => 'words_sensitive_url',        'field' => 'url',    'checker' => 'check_in',  'name' => '敏感网址', 'message' => '评论者的网址包含敏感词汇'],
+        ['opt' => 'opt_sensitive_email',  'words' => 'words_sensitive_email',      'field' => 'mail',   'checker' => 'check_in',  'name' => '敏感邮箱', 'message' => '评论者的邮箱包含敏感词汇'],
     ];
 
     public static function activate()
@@ -139,7 +129,7 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
                     $matchText = $rule['checker'] === 'no_chinese' ? '' : $matched;
                     self::log(self::buildRecord($comment, $rule['name'], $matchText, 'abandon'));
                 }
-                throw new Typecho_Widget_Exception(self::ABANDON_MESSAGES[$rule['name']] ?? '评论被拦截');
+                throw new Typecho_Widget_Exception($rule['message'] ?? '评论被拦截');
             }
 
             // waiting：收束到 matchedRules 统一处理
@@ -218,6 +208,9 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
         return false;
     }
 
+    /** @var bool 日志目录防护文件是否已在本请求内创建 */
+    private static $logProtectionDone = false;
+
     private static function log(array $record)
     {
         $logDir = __DIR__ . '/logs';
@@ -228,17 +221,20 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
             }
         }
 
-        // 惰性创建 Web 访问防护文件（兼容已有目录升级的场景）
-        $htaccess = $logDir . '/.htaccess';
-        if (!file_exists($htaccess)) {
-            @file_put_contents($htaccess, "Require all denied\nDeny from all\n", LOCK_EX);
-        }
-        $indexFile = $logDir . '/index.html';
-        if (!file_exists($indexFile)) {
-            @file_put_contents($indexFile, '', LOCK_EX);
+        // 惰性创建 Web 访问防护文件（同一请求内仅检查一次）
+        if (!self::$logProtectionDone) {
+            self::$logProtectionDone = true;
+            $htaccess = $logDir . '/.htaccess';
+            if (!file_exists($htaccess)) {
+                @file_put_contents($htaccess, "Require all denied\nDeny from all\n", LOCK_EX);
+            }
+            $indexFile = $logDir . '/index.html';
+            if (!file_exists($indexFile)) {
+                @file_put_contents($indexFile, '', LOCK_EX);
+            }
         }
 
-        $logFile = $logDir . '/log';
+        $logFile = self::logFilePath();
 
         $record['time'] = date('Y-m-d H:i:s');
         $newLine = json_encode($record, JSON_UNESCAPED_UNICODE);
@@ -259,9 +255,11 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
             return;
         }
 
-        rewind($fp);
         $content = stream_get_contents($fp);
-        $lines = ($content === false || $content === '') ? [] : explode("\n", rtrim($content, "\n"));
+        $lines = ($content === false || $content === '') ? [] : array_values(array_filter(
+            explode("\n", rtrim($content, "\n")),
+            'strlen'
+        ));
 
         $lines[] = $newLine;
 
@@ -277,9 +275,14 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
         fclose($fp);
     }
 
+    private static function logFilePath(): string
+    {
+        return __DIR__ . '/logs/log';
+    }
+
     private static function get_log_entries($n)
     {
-        $logFile = __DIR__ . '/logs/log';
+        $logFile = self::logFilePath();
         if (!file_exists($logFile)) {
             return [];
         }
@@ -318,7 +321,7 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
             return;
         }
 
-        $logFile = __DIR__ . '/logs/log';
+        $logFile = self::logFilePath();
         if (file_exists($logFile)) {
             if (!unlink($logFile)) {
                 error_log('SpamLite: 无法删除日志文件');
