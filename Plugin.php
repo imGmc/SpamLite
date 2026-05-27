@@ -195,7 +195,7 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
      * @param array $rule 规则定义
      * @param string $fieldValue 待检查的字段值
      * @param mixed $filter_set 插件配置对象
-     * @return string|false 匹配到的词汇（check_in 类），true（no_chinese 类），或 false（未匹配）
+     * @return string|false 匹配到的词汇（check_in 类），规则名（no_chinese 类），或 false（未匹配）
      */
     private static function checkRule(array $rule, string $fieldValue, $filter_set): string|false
     {
@@ -203,7 +203,7 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
             return self::check_in($filter_set->{$rule['words']}, $fieldValue);
         }
         if ($rule['checker'] === 'no_chinese') {
-            return !self::has_chinese($fieldValue);
+            return self::has_chinese($fieldValue) ? false : $rule['name'];
         }
         return false;
     }
