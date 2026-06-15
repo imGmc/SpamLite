@@ -23,11 +23,11 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
      * 过滤规则配置。每项包含：选项键名、敏感词键名、评论字段、检查方式、规则名、拦截错误消息。
      */
     private const RULES = [
-        ['opt' => 'opt_sensitive_words',  'words' => 'words_sensitive',           'field' => 'text',   'checker' => 'check_in',  'name' => '敏感词汇', 'message' => '评论内容中包含敏感词汇'],
+        ['opt' => 'opt_sensitive_words',  'words' => 'words_sensitive',           'field' => 'text',   'checker' => 'checkInWords',  'name' => '敏感词汇', 'message' => '评论内容中包含敏感词汇'],
         ['opt' => 'opt_no_chinese',       'words' => null,                         'field' => 'text',   'checker' => 'no_chinese', 'name' => '非中文评论', 'message' => '评论内容请包含至少一个中文汉字'],
-        ['opt' => 'opt_sensitive_nickname','words' => 'words_sensitive_nickname',  'field' => 'author', 'checker' => 'check_in',  'name' => '敏感昵称', 'message' => '评论者的昵称包含敏感词汇'],
-        ['opt' => 'opt_sensitive_url',    'words' => 'words_sensitive_url',        'field' => 'url',    'checker' => 'check_in',  'name' => '敏感网址', 'message' => '评论者的网址包含敏感词汇'],
-        ['opt' => 'opt_sensitive_email',  'words' => 'words_sensitive_email',      'field' => 'mail',   'checker' => 'check_in',  'name' => '敏感邮箱', 'message' => '评论者的邮箱包含敏感词汇'],
+        ['opt' => 'opt_sensitive_nickname','words' => 'words_sensitive_nickname',  'field' => 'author', 'checker' => 'checkInWords',  'name' => '敏感昵称', 'message' => '评论者的昵称包含敏感词汇'],
+        ['opt' => 'opt_sensitive_url',    'words' => 'words_sensitive_url',        'field' => 'url',    'checker' => 'checkInWords',  'name' => '敏感网址', 'message' => '评论者的网址包含敏感词汇'],
+        ['opt' => 'opt_sensitive_email',  'words' => 'words_sensitive_email',      'field' => 'mail',   'checker' => 'checkInWords',  'name' => '敏感邮箱', 'message' => '评论者的邮箱包含敏感词汇'],
     ];
 
     public static function activate()
@@ -152,7 +152,7 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
         return $comment;
     }
 
-    private static function buildRecord($comment, $rule, $matched, $action)
+    private static function buildRecord(array $comment, string $rule, string $matched, string $action): array
     {
         return [
             'ip' => $comment['ip'] ?? '',
@@ -166,13 +166,12 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
         ];
     }
 
-    private static function check_in($needles, $haystack)
+    private static function checkInWords(string $needles, string $haystack): string|false
     {
-        if (!is_string($haystack) || $haystack === '') {
+        if ($haystack === '') {
             return false;
         }
-        // (string) 转换防止配置未保存时传入 null 触发 depreciation
-        $needles = explode("\n", (string)$needles);
+        $needles = explode("\n", $needles);
         foreach ($needles as $needle) {
             $needle = trim($needle);
             if ($needle !== '' && mb_stripos($haystack, $needle) !== false) {
@@ -182,7 +181,7 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
         return false;
     }
 
-    private static function has_chinese($text)
+    private static function hasChinese(string $text): bool
     {
         if ($text === '') {
             return false;
@@ -195,15 +194,15 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
      * @param array $rule 规则定义
      * @param string $fieldValue 待检查的字段值
      * @param mixed $filter_set 插件配置对象
-     * @return string|false 匹配到的词汇（check_in 类），规则名（no_chinese 类），或 false（未匹配）
+     * @return string|false 匹配到的词汇（checkInWords 类），规则名（no_chinese 类），或 false（未匹配）
      */
     private static function checkRule(array $rule, string $fieldValue, $filter_set): string|false
     {
-        if ($rule['checker'] === 'check_in') {
-            return self::check_in($filter_set->{$rule['words']}, $fieldValue);
+        if ($rule['checker'] === 'checkInWords') {
+            return self::checkInWords($filter_set->{$rule['words']}, $fieldValue);
         }
         if ($rule['checker'] === 'no_chinese') {
-            return self::has_chinese($fieldValue) ? false : $rule['name'];
+            return self::hasChinese($fieldValue) ? false : $rule['name'];
         }
         return false;
     }
@@ -226,11 +225,11 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
             self::$logProtectionDone = true;
             $htaccess = $logDir . '/.htaccess';
             if (!file_exists($htaccess)) {
-                @file_put_contents($htaccess, "Require all denied\nDeny from all\n", LOCK_EX);
+                file_put_contents($htaccess, "Require all denied\nDeny from all\n", LOCK_EX);
             }
             $indexFile = $logDir . '/index.html';
             if (!file_exists($indexFile)) {
-                @file_put_contents($indexFile, '', LOCK_EX);
+                file_put_contents($indexFile, '', LOCK_EX);
             }
         }
 
@@ -244,7 +243,7 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
         }
 
         // 在 flock 保护下完成读-改-写，避免并发竞争
-        $fp = @fopen($logFile, 'c');
+        $fp = fopen($logFile, 'c');
         if (!is_resource($fp)) {
             error_log('SpamLite: 无法打开日志文件');
             return;
@@ -280,20 +279,20 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
         return __DIR__ . '/logs/log';
     }
 
-    private static function get_log_entries($n)
+    private static function getLogEntries(int $n): array
     {
         $logFile = self::logFilePath();
         if (!file_exists($logFile)) {
             return [];
         }
-        $lines = @file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $lines = file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         if (!is_array($lines)) {
             return [];
         }
         $lines = array_slice($lines, -$n);
         $entries = [];
         foreach ($lines as $line) {
-            $data = @json_decode($line, true);
+            $data = json_decode($line, true);
             if (is_array($data)) {
                 $entries[] = $data;
             }
@@ -320,31 +319,38 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
         if (!hash_equals(self::clearLogToken(), $token)) {
             return;
         }
+        self::doClearLog();
+        self::clearLogRedirect();
+    }
 
+    private static function doClearLog(): void
+    {
         $logFile = self::logFilePath();
-        if (file_exists($logFile)) {
-            // 获取排他锁后再截断清零，避免与 log() 并发写入冲突（Windows 下尤其重要）
-            $fp = @fopen($logFile, 'r+b');
-            if (is_resource($fp)) {
-                if (flock($fp, LOCK_EX)) {
-                    ftruncate($fp, 0);
-                    fflush($fp);
-                    flock($fp, LOCK_UN);
-                } else {
-                    error_log('SpamLite: 清空日志时无法获取文件锁');
-                }
-                fclose($fp);
-            } else {
-                error_log('SpamLite: 无法打开日志文件进行清空');
-            }
+        if (!file_exists($logFile)) {
+            return;
         }
+        $fp = fopen($logFile, 'r+b');
+        if (!is_resource($fp)) {
+            error_log('SpamLite: 无法打开日志文件进行清空');
+            return;
+        }
+        if (!flock($fp, LOCK_EX)) {
+            error_log('SpamLite: 清空日志时无法获取文件锁');
+            fclose($fp);
+            return;
+        }
+        ftruncate($fp, 0);
+        fflush($fp);
+        flock($fp, LOCK_UN);
+        fclose($fp);
+    }
 
-        // 从 URL 中移除 clear_log 和 _spamlite_token 参数
+    private static function clearLogRedirect(): void
+    {
         $url = $_SERVER['REQUEST_URI'] ?? '';
         $url = preg_replace('/[?&]clear_log=\d*/', '', $url);
         $url = preg_replace('/[?&]_spamlite_token=[^&]*/', '', $url);
         $url = rtrim($url, '?&') ?: '.';
-
         header('Location: ' . $url);
         exit;
     }
@@ -354,7 +360,7 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
     {
         echo '<div class="typecho-page-title" style="margin-top:30px"><h2>最近 ' . self::LOG_DISPLAY_COUNT . ' 条日志</h2></div>';
 
-        $entries = array_reverse(self::get_log_entries(self::LOG_DISPLAY_COUNT));
+        $entries = array_reverse(self::getLogEntries(self::LOG_DISPLAY_COUNT));
         if (empty($entries)) {
             echo '<p style="color:#999">暂无日志记录</p>';
             return;
