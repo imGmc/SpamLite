@@ -112,8 +112,8 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
             }
 
             $fieldValue = $comment[$rule['field']] ?? '';
-            // check_in 类规则在字段为空时跳过
-            if ($rule['checker'] === 'check_in' && $fieldValue === '') {
+            // 空字段跳过所有规则检查（无内容可匹配）
+            if ($fieldValue === '') {
                 continue;
             }
 
@@ -323,8 +323,19 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
 
         $logFile = self::logFilePath();
         if (file_exists($logFile)) {
-            if (!unlink($logFile)) {
-                error_log('SpamLite: 无法删除日志文件');
+            // 获取排他锁后再截断清零，避免与 log() 并发写入冲突（Windows 下尤其重要）
+            $fp = @fopen($logFile, 'r+b');
+            if (is_resource($fp)) {
+                if (flock($fp, LOCK_EX)) {
+                    ftruncate($fp, 0);
+                    fflush($fp);
+                    flock($fp, LOCK_UN);
+                } else {
+                    error_log('SpamLite: 清空日志时无法获取文件锁');
+                }
+                fclose($fp);
+            } else {
+                error_log('SpamLite: 无法打开日志文件进行清空');
             }
         }
 
@@ -343,7 +354,7 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
     {
         echo '<div class="typecho-page-title" style="margin-top:30px"><h2>最近 ' . self::LOG_DISPLAY_COUNT . ' 条日志</h2></div>';
 
-        $entries = self::get_log_entries(self::LOG_DISPLAY_COUNT);
+        $entries = array_reverse(self::get_log_entries(self::LOG_DISPLAY_COUNT));
         if (empty($entries)) {
             echo '<p style="color:#999">暂无日志记录</p>';
             return;
