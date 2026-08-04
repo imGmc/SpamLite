@@ -5,7 +5,7 @@
  *
  * @package SpamLite
  * @author 陶小桃Blog Gmc
- * @version 0.1.2
+ * @version 0.1.3
  * @link https://www.gmcllp.cn
  */
 class SpamLite_Plugin implements Typecho_Plugin_Interface
@@ -129,7 +129,7 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
                     $matchText = $rule['checker'] === 'no_chinese' ? '' : $matched;
                     self::log(self::buildRecord($comment, $rule['name'], $matchText, 'abandon'));
                 }
-                throw new Typecho_Widget_Exception($rule['message'] ?? '评论被拦截');
+                throw new Typecho_Widget_Exception($rule['message'] ?? '评论被拦截', 403);
             }
 
             // waiting：收束到 matchedRules 统一处理
@@ -209,6 +209,9 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
 
     /** @var bool 日志目录防护文件是否已在本请求内创建 */
     private static $logProtectionDone = false;
+
+    /** @var bool 本次请求是否已执行清空日志（用于配置页提示） */
+    private static $clearLogDone = false;
 
     private static function log(array $record)
     {
@@ -320,7 +323,7 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
             return;
         }
         self::doClearLog();
-        self::clearLogRedirect();
+        self::$clearLogDone = true;
     }
 
     private static function doClearLog(): void
@@ -345,16 +348,6 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
         fclose($fp);
     }
 
-    private static function clearLogRedirect(): void
-    {
-        $url = $_SERVER['REQUEST_URI'] ?? '';
-        $url = preg_replace('/[?&]clear_log=\d*/', '', $url);
-        $url = preg_replace('/[?&]_spamlite_token=[^&]*/', '', $url);
-        $url = rtrim($url, '?&') ?: '.';
-        header('Location: ' . $url);
-        exit;
-    }
-
     /** 渲染日志展示区域（配置页使用） */
     private static function renderLogSection(): void
     {
@@ -362,7 +355,9 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
 
         $entries = array_reverse(self::getLogEntries(self::LOG_DISPLAY_COUNT));
         if (empty($entries)) {
-            echo '<p style="color:#999">暂无日志记录</p>';
+            echo self::$clearLogDone
+                ? '<p style="color:#6c9c41">日志已清空</p>'
+                : '<p style="color:#999">暂无日志记录</p>';
             return;
         }
 
@@ -380,7 +375,19 @@ class SpamLite_Plugin implements Typecho_Plugin_Interface
     /** 渲染清空日志按钮（配置页使用） */
     private static function renderClearButton(): void
     {
-        $clearUrl = '?clear_log=1&_spamlite_token=' . urlencode(self::clearLogToken());
-        echo '<p style="margin-top:8px"><a href="' . $clearUrl . '" class="btn btn-s" style="color:#c33" onclick="return confirm(\'确定清空所有日志？\')">清空日志</a></p>';
+        // 用表单提交代替 <a> 链接：Typecho 后台脚本会给未豁免的 <a> 强制加 target="_blank"，
+        // 导致点击后在新标签页打开。表单提交固定在当前标签页导航，且不依赖 JS 也能用。
+        $uri = $_SERVER['REQUEST_URI'] ?? '';
+        $path = explode('?', $uri, 2)[0];
+        $action = htmlspecialchars($path ?: '');
+        $token = htmlspecialchars(self::clearLogToken());
+        $plugin = htmlspecialchars(basename(__DIR__));
+
+        echo '<div style="margin-top:8px"><form method="get" action="' . $action . '" style="display:inline" onsubmit="return confirm(\'确定清空所有日志？\')">'
+            . '<input type="hidden" name="config" value="' . $plugin . '">'
+            . '<input type="hidden" name="clear_log" value="1">'
+            . '<input type="hidden" name="_spamlite_token" value="' . $token . '">'
+            . '<button type="submit" class="btn btn-s" style="color:#c33">清空日志</button>'
+            . '</form></div>';
     }
 }
